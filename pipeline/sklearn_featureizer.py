@@ -2,9 +2,9 @@ import argparse
 from io import StringIO
 import json
 import os
-import subprocess as sb
-import sys
 
+import joblib
+import nltk
 import numpy as np
 import pandas as pd
 from sagemaker_containers.beta.framework import (
@@ -15,28 +15,6 @@ from sagemaker_containers.beta.framework import (
     transformer,
     worker
 )
-from sklearn.externals import joblib
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.linear_model import SGDClassifier
-from sklearn.pipeline import Pipeline
-
-try:
-    import nltk
-except ImportError:
-    # pip install nltk without going the custom dockerfile route
-    # Although featurizers.py uses nltk, put the pip installs here so that
-    # the grid searching doesn't constantly make these calls
-    sb.call([sys.executable, "-m", "pip", "install", "nltk"])
-    import nltk
-
-try:
-    import contractions
-except ImportError:
-    # pip install nltk without going the custom dockerfile route
-    # Although featurizers.py uses nltk, put the pip installs here so that
-    # the grid searching doesn't constantly make these calls
-    sb.call([sys.executable, "-m", "pip", "install", "contractions"])
-    import contractions
 
 try:
     nltk.data.find('wordnet')
@@ -93,23 +71,11 @@ if __name__ == '__main__':
     input_file = input_files[0]
 
     df = pd.read_csv(input_file)
-    df.columns = ['Classification', 'Clause Text']
-    df = df.astype({'Classification': np.float64, 'Clause Text': str})        
-
-    pipeline = Pipeline(
-        steps=[
-            ('preprocessor', TextPreprocessor()),
-            ('vectorizer', TfidfVectorizer()),
-            ('estimator', SGDClassifier(class_weight="balanced"))
-        ]
-    )
+    df.columns = ['Clause ID', 'Clause Text', 'Classification']
+    df = df.astype({'Classification': np.float64, 'Clause Text': str})
 
     print("Fitting model...")
-    model = randomized_grid_search(
-        df,
-        pipeline,
-        n_iter_search=2
-    )
+    model = randomized_grid_search(df, n_iter_search=500)
     print("Done fitting model!")
 
     print("Saving model...")
@@ -127,9 +93,9 @@ def input_fn(input_data, content_type):
         # Read the raw input data as CSV.
         df = pd.read_csv(StringIO(input_data), header=None)
 
-        if len(df.columns) == 2:
+        if len(df.columns) == 3:
             # This is a labelled example, which includes the target
-            df.columns = ['Classification', 'Clause Text']
+            df.columns = ['Clause ID', 'Clause Text', 'Classification']
             df = df.astype({'Classification': np.float64, 'Clause Text': str})
         elif len(df.columns) == 1:
             # This is an unlabelled example.
@@ -137,10 +103,12 @@ def input_fn(input_data, content_type):
             df = df.astype({'Clause Text': str})
         else:
             raise ValueError(
-                "Invalid payload. Payload must contain either two columns \
-                (target, text) or one column (text)"
+                "Invalid payload. Payload must contain either 3 columns \
+                (id, text, target) or one column (text)"
             )
 
+        # peform text pre-processing here so as not to repeat in grid search
+        df['Clause Text'] = TextPreprocessor().fit_transform(df['Clause Text'])
         return df
 
     else:
@@ -157,16 +125,16 @@ def output_fn(inferences, accept):
         instances = []
         for inference in inferences.tolist():
             try:
-                target, decision_boundary, prediction = inference
+                target, pred_prob, prediction = inference
                 instances.append({
-                    "decision boundary": decision_boundary,
+                    "pred_prob": pred_prob,
                     "prediction": prediction,
                     "target": target
                 })
             except ValueError:
-                decision_boundary, prediction = inference
+                pred_prob, prediction = inference
                 instances.append({
-                    "decision boundary": decision_boundary,
+                    "pred_prob": pred_prob,
                     "prediction": prediction
                 })
         json_output = {"instances": instances}
@@ -184,6 +152,7 @@ def predict_fn(input_data, model):
     """
     input_data = input_data['Clause Text']
 
+    # TODO: use eli5 to analyze pred and insert html into response
     y_preds = model.predict(input_data)
 
     # get the index of the positive class (i.e. 1, compliant)
@@ -196,7 +165,7 @@ def predict_fn(input_data, model):
 
     if 'Classification' in input_data:
         # Return the label (as the first column) alongside the inferences
-        return np.insert(inferences, 0, input_data['target'], axis=1)
+        return np.insert(inferences, 0, input_data['Classification'], axis=1)
     else:
         return inferences
 
