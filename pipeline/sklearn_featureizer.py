@@ -58,28 +58,35 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    input_files = [
-        os.path.join(args.train, file) for file in os.listdir(args.train)
-        if file.endswith('.csv')
+    train_files = [
+        os.path.join(args.train, f) for f in os.listdir(args.train)
+        if f.endswith('.csv')
     ]
 
-    if len(input_files) == 0:
+    if len(train_files) == 0:
         raise ValueError((f'There is no file in {args.train}.'))
-    elif len(input_files) != 1:
+    elif len(train_files) != 1:
         raise ValueError((f'There is more than one file in {args.train}'))
 
-    input_file = input_files[0]
+    train_file = train_files[0]
 
-    df = pd.read_csv(input_file)
+    # Train Data
+    df = pd.read_csv(train_file)
     df.columns = ['Clause ID', 'Clause Text', 'Classification']
     df = df.astype({'Classification': np.float64, 'Clause Text': str})
+    df['Clause Text'] = TextPreprocessor().fit_transform(
+        df['Clause Text']
+    )
+    X = df['Clause Text']
+    y = df['Classification']
 
     print("Fitting model...")
-    model = randomized_grid_search(df, n_iter_search=500)
+    model = randomized_grid_search(X, y, n_iter=1000)
     print("Done fitting model!")
-
-    print("Saving model...")
-    joblib.dump(model, os.path.join(args.model_dir, "model.joblib"))
+    joblib.dump(
+        model,
+        os.path.join(args.model_dir, "model.joblib")
+    )
     print("Done saving the model!")
 
 

@@ -1,6 +1,7 @@
 contractions==0.0.25
 eli5==0.10.1
 flake8==3.8.3
+joblib==0.16.0
 jupyter==1.0.0
 matplotlib>=3.2.2
 nltk==3.5
