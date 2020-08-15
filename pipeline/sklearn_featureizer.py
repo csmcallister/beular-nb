@@ -165,18 +165,24 @@ def predict_fn(input_data, model):
     """Call predict on the estimator given input data.
     """
     input_data = input_data['Clause Text']
-    
-    if len(model.steps) == 2:
+
+    try:
+        lsa = model.named_steps['lsa']
+        lsa_passthrough = lsa.get_params().get('passthrough', False)
+    except KeyError:
+        lsa_passthrough = False
+
+    if lsa_passthrough:
         inferences = explain_pred(input_data, model)
     else:
-      inferences = predict_from_model(input_data, model)
-    
+        inferences = predict_from_model(input_data, model)
+
     if 'Classification' in input_data:
         # Return the label (as the first column) alongside the inferences
         return np.insert(inferences, 0, input_data['Classification'], axis=1)
     else:
         return inferences
-    
+
 
 def model_fn(model_dir):
     """Deserialize fitted model
@@ -217,10 +223,10 @@ def explain_pred(input_data, model):
     y_preds.append(y_pred)
     y_probs.append(y_prob)
     inferences = np.column_stack((y_probs, y_preds, encoded_htmls))
-    
+
     return inferences
 
-  
+
 def predict_from_model(input_data, model):
     y_preds = model.predict(input_data)
 
@@ -230,7 +236,5 @@ def predict_from_model(input_data, model):
     except AttributeError:
         y_scores = model.decision_function(input_data)
     inferences = np.column_stack((y_scores, y_preds))
-    
-    return inferences
 
-    
+    return inferences
