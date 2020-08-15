@@ -1,8 +1,13 @@
 import argparse
+import base64
 from io import StringIO
 import json
 import os
 
+
+import eli5
+from eli5.formatters import format_as_html
+from eli5.formatters.as_dict import format_as_dict
 import joblib
 import nltk
 import numpy as np
@@ -31,7 +36,6 @@ try:
 except LookupError:
     nltk.download('averaged_perceptron_tagger', quiet=True)
 
-from featurizers import TextPreprocessor
 from train import randomized_grid_search
 
 
@@ -74,9 +78,6 @@ if __name__ == '__main__':
     df = pd.read_csv(train_file)
     df.columns = ['Clause ID', 'Clause Text', 'Classification']
     df = df.astype({'Classification': np.float64, 'Clause Text': str})
-    df['Clause Text'] = TextPreprocessor().fit_transform(
-        df['Clause Text']
-    )
     X = df['Clause Text']
     y = df['Classification']
 
@@ -114,8 +115,6 @@ def input_fn(input_data, content_type):
                 (id, text, target) or one column (text)"
             )
 
-        # peform text pre-processing here so as not to repeat in grid search
-        df['Clause Text'] = TextPreprocessor().fit_transform(df['Clause Text'])
         return df
 
     else:
@@ -131,14 +130,22 @@ def output_fn(inferences, accept):
     if accept == "application/json":
         instances = []
         for inference in inferences.tolist():
-            try:
-                target, pred_prob, prediction = inference
+            if len(inference) == 4:
+                target, pred_prob, prediction, expl = inference
                 instances.append({
                     "pred_prob": pred_prob,
                     "prediction": prediction,
-                    "target": target
+                    "target": target,
+                    "expl": expl
                 })
-            except ValueError:
+            elif len(inference) == 3:
+                pred_prob, prediction, expl = inference
+                instances.append({
+                    "pred_prob": pred_prob,
+                    "prediction": prediction,
+                    "expl": expl
+                })
+            else:
                 pred_prob, prediction = inference
                 instances.append({
                     "pred_prob": pred_prob,
@@ -158,27 +165,72 @@ def predict_fn(input_data, model):
     """Call predict on the estimator given input data.
     """
     input_data = input_data['Clause Text']
-
-    # TODO: use eli5 to analyze pred and insert html into response
-    y_preds = model.predict(input_data)
-
-    # get the index of the positive class (i.e. 1, compliant)
-    positive_class_idx = list(model.classes_).index(1)
-    try:
-        y_scores = model.predict_proba(input_data)[:, positive_class_idx]
-    except AttributeError:
-        y_scores = model.decision_function(input_data)
-    inferences = np.column_stack((y_scores, y_preds))
-
+    
+    if len(model.steps) == 2:
+        inferences = explain_pred(input_data, model)
+    else:
+      inferences = predict_from_model(input_data, model)
+    
     if 'Classification' in input_data:
         # Return the label (as the first column) alongside the inferences
         return np.insert(inferences, 0, input_data['Classification'], axis=1)
     else:
         return inferences
-
+    
 
 def model_fn(model_dir):
     """Deserialize fitted model
     """
     model = joblib.load(os.path.join(model_dir, "model.joblib"))
     return model
+
+
+def explain_pred(input_data, model):
+    y_preds = []
+    y_probs = []
+    encoded_htmls = []
+    for i in input_data:
+        expl = eli5.explain_prediction(
+            model.steps[-1][1],
+            i,
+            model.steps[0][1],
+            target_names=['Compliant', 'Not Compliant'],
+            top=10
+        )
+        html_explanation = format_as_html(
+            expl,
+            force_weights=False,
+            show_feature_values=True
+        ).replace("\n", "").strip()
+        encoded_html = base64.b64encode(bytes(html_explanation, encoding='utf-8'))
+        encoded_htmls.append(encoded_html)
+        expl_dict = format_as_dict(expl)
+        targets = expl_dict['targets'][0]
+        target = targets['target']
+        y_pred = 1 if target.startswith('N') else 0
+        y_prob = targets['proba']
+        if len(i.split()) < 3:
+            # one or two words can't be non-compliant
+            y_pred = 0
+            y_prob = 1.0
+        y_prob = f'{round(y_prob, 3) * 100}%'
+    y_preds.append(y_pred)
+    y_probs.append(y_prob)
+    inferences = np.column_stack((y_probs, y_preds, encoded_htmls))
+    
+    return inferences
+
+  
+def predict_from_model(input_data, model):
+    y_preds = model.predict(input_data)
+
+    positive_class_idx = list(model.classes_).index(1)
+    try:
+        y_scores = model.predict_proba(input_data)[:, positive_class_idx]
+    except AttributeError:
+        y_scores = model.decision_function(input_data)
+    inferences = np.column_stack((y_scores, y_preds))
+    
+    return inferences
+
+    
