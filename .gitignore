@@ -136,3 +136,4 @@ cdk.out
 
 # data
 .vscode/
+*.bin

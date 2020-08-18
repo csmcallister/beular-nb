@@ -76,7 +76,7 @@ if __name__ == '__main__':
 
     # Train Data
     df = pd.read_csv(train_file)
-    df.columns = ['Clause ID', 'Clause Text', 'Classification']
+    df.columns = ['Clause Text', 'Classification']
     df = df.astype({'Classification': np.float64, 'Clause Text': str})
     X = df['Clause Text']
     y = df['Classification']
@@ -101,9 +101,9 @@ def input_fn(input_data, content_type):
         # Read the raw input data as CSV.
         df = pd.read_csv(StringIO(input_data), header=None)
 
-        if len(df.columns) == 3:
+        if len(df.columns) == 2:
             # This is a labelled example, which includes the target
-            df.columns = ['Clause ID', 'Clause Text', 'Classification']
+            df.columns = ['Clause Text', 'Classification']
             df = df.astype({'Classification': np.float64, 'Clause Text': str})
         elif len(df.columns) == 1:
             # This is an unlabelled example.

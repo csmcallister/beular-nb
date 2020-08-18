@@ -80,6 +80,10 @@ def stemmer(text):
     return stems
 
 
+def nlkt_tokenize(text):
+    return nltk.word_tokenize(text)
+
+
 pipe = Pipeline([
     ('tfidf', TfidfVectorizer()),
     ('lsa', OptionalTruncatedSVD()),
@@ -91,7 +95,7 @@ params = {
     "tfidf__min_df": stats.randint(1, 3),
     "tfidf__max_df": stats.uniform(.95, .3),
     "tfidf__sublinear_tf": [True, False],
-    "tfidf__tokenizer": [None, stemmer, lemmatizer],
+    "tfidf__tokenizer": [None, stemmer, lemmatizer, nlkt_tokenize],
     "lsa__passthrough": [True, False, True, True, True, True, True],
     "lsa__n_components": stats.randint(100, 3000),
     'clf__n_estimators': stats.randint(100, 300),
