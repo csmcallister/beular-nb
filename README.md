@@ -4,7 +4,9 @@ Model code for the SageMaker instance of the [beular-api](https://github.com/csm
 
 ## Getting Started
 
-Ensure that this repo is public and add it's git url to `config.py` in [beular-api](https://github.com/csmcallister/beular-api). This will automatically git clone this project into the SageMaker instance once it builds. It will also let you source any code you develop while working within SageMaker.
+These notebooks, with the exception of `pipeline/Analysis.ipynb` and `pipeline/Eval.ipynb` are meant to be run in an AWS Sagemaker Instance. If working with the former two noteboks, install the requirements with `pip install -r requirements.txt`.
+
+If you're connecting this repo to the SageMaker instance in [beular-api](https://github.com/csmcallister/beular-api), ensure that this repo is public and add it's git url to `config.py` in beular-api. This will automatically git clone this project into the SageMaker instance once it builds. It will also let you source any code you develop while working within SageMaker.
 
 ### Downloading the BlazingText Model
 
